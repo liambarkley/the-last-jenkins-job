@@ -13,11 +13,18 @@ set -uo pipefail
 
 CONTAINER_NAME="jenkins-controller"
 FAREWELL_DELAY=15  # seconds between "goodbye" and actual termination
+DOCKER_SOCK="/var/run/docker.sock"
 
-# ── Verify we actually have Docker socket access ──────────────────────────
-if ! docker ps &>/dev/null; then
+# ── Verify we can reach the Docker daemon via the raw API ─────────────────
+# We use curl --unix-socket rather than the docker CLI because the CLI
+# requires the jenkins user to be in the docker group with a matching GID.
+# The container runs as root (see docker-compose.yml) so the socket is always
+# accessible regardless of file permissions.
+echo "  Socket: $(ls -la ${DOCKER_SOCK} 2>/dev/null || echo 'not found')"
+echo "  User:   $(id)"
+if ! curl -sf --unix-socket "${DOCKER_SOCK}" http://localhost/_ping > /dev/null 2>&1; then
     echo ""
-    echo "⚠️  Cannot reach Docker socket. Self-termination aborted."
+    echo "⚠️  Cannot reach Docker socket at ${DOCKER_SOCK}. Self-termination aborted."
     echo "   Jenkins will have to be removed manually:"
     echo "   docker compose stop jenkins"
     echo ""
@@ -67,10 +74,10 @@ cat << 'EOF'
   And honestly? That was always the goal.
 
   Platform endpoints (bookmark these):
-    ArgoCD:     http://localhost:8090          (admin / see argocd-initial-admin-secret)
-    Grafana:    http://localhost:3000          (admin / gitops-era-begins)
-    Prometheus: http://localhost:9090
-    Gitea    http://localhost:3001          (gitea / gitops-forever)
+    ArgoCD:     http://argocd.localhost        (admin / see argocd-initial-admin-secret)
+    Grafana:    http://grafana.localhost       (admin / gitops-era-begins)
+    Prometheus: http://prometheus.localhost
+    Gitea:      http://localhost:3001          (gitea / gitops-forever)
     Dashboard:  http://localhost:8888          (still running, outlives me)
 
   To bring me back (if you miss me):
@@ -108,8 +115,10 @@ echo ""
 
 nohup bash -c "
     sleep 3
-    echo 'Removing Jenkins container...' >> /var/jenkins_home/farewell.log 2>&1
-    docker rm -f ${CONTAINER_NAME} >> /var/jenkins_home/farewell.log 2>&1
+    echo 'Removing Jenkins container via Docker API...' >> /var/jenkins_home/farewell.log 2>&1
+    curl -sf --unix-socket /var/run/docker.sock \
+        -X DELETE 'http://localhost/containers/${CONTAINER_NAME}?force=true&v=false' \
+        >> /var/jenkins_home/farewell.log 2>&1
     echo 'Done.' >> /var/jenkins_home/farewell.log 2>&1
 " > /dev/null 2>&1 &
 

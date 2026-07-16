@@ -444,12 +444,12 @@ EOF
   },
   "platform": {
     "argocd": {
-      "url": "http://localhost:8090",
+      "url": "http://argocd.localhost",
       "credentials": "admin / (see argocd-initial-admin-secret)",
       "status": "syncing"
     },
     "grafana": {
-      "url": "http://localhost:3000",
+      "url": "http://grafana.localhost",
       "credentials": "admin / gitops-era-begins",
       "status": "running"
     },
@@ -507,8 +507,8 @@ EOF
 ║  went wrong with the self-destruct. That is also fine.       ║
 ║                                                              ║
 ║  Platform endpoints:                                         ║
-║    ArgoCD:   http://localhost:8090                           ║
-║    Grafana:  http://localhost:3000                           ║
+║    ArgoCD:   http://argocd.localhost                         ║
+║    Grafana:  http://grafana.localhost                        ║
 ║    Gitea    http://localhost:3001                           ║
 ║    Dashboard: http://localhost:8888                          ║
 ╚══════════════════════════════════════════════════════════════╝

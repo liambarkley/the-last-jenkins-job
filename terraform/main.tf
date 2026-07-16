@@ -104,6 +104,20 @@ resource "helm_release" "ingress_nginx" {
   cleanup_on_fail  = true
 }
 
+# ── Admission webhook grace period ────────────────────────────────────────────
+# ingress-nginx registers a ValidatingWebhookConfiguration that Kubernetes calls
+# whenever an Ingress is created. The webhook endpoint becomes reachable a few
+# seconds AFTER the pod reports Ready. Without this delay, any chart that creates
+# an Ingress immediately after ingress-nginx (ArgoCD, kube-prometheus-stack)
+# gets a "context deadline exceeded" from the webhook and fails.
+resource "null_resource" "ingress_webhook_ready" {
+  depends_on = [helm_release.ingress_nginx]
+
+  provisioner "local-exec" {
+    command = "sleep 20"
+  }
+}
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ARGO CD — The successor
 # The GitOps engine. Once this is running and watching the platform-config
@@ -127,8 +141,6 @@ resource "helm_release" "argocd" {
       }
 
       server = {
-        # Run insecure locally — no TLS termination needed on Docker Desktop
-        insecure = true
         # ClusterIP — ingress-nginx handles external routing.
         # LoadBalancer on Docker Desktop leaves EXTERNAL-IP <pending> forever
         # and the load-balancer-cleanup finalizer blocks namespace deletion.
@@ -136,9 +148,9 @@ resource "helm_release" "argocd" {
           type = "ClusterIP"
         }
         ingress = {
-          enabled          = true
-          ingressClassName = "nginx"
-          hosts            = ["argocd.localhost"]
+          # Disabled — the chart ignores the hosts override and defaults to
+          # argocd.example.com regardless. We create the Ingress explicitly below.
+          enabled = false
         }
         metrics = {
           enabled = true
@@ -152,9 +164,15 @@ resource "helm_release" "argocd" {
       }
 
       configs = {
-        # Note: server.insecure is set via server.insecure = true above (adds --insecure flag).
-        # Do NOT also set it in params — ArgoCD Helm v6.11.1 template does a boolean
-        # eq comparison that fails when the value comes through as a YAML string.
+        # In ArgoCD Helm 6.x, insecure mode must be set via configs.params,
+        # not server.insecure. The server.insecure Helm value targets a different
+        # code path that doesn't reliably take effect in 6.11.1 — the server
+        # continues to redirect HTTP→HTTPS, causing ERR_TOO_MANY_REDIRECTS.
+        # configs.params writes directly to argocd-cmd-params-cm which the server
+        # reads at startup.
+        params = {
+          "server.insecure" = "true"
+        }
         cm = {
           # Tell ArgoCD where to find its own UI
           url = "http://argocd.localhost"
@@ -196,7 +214,48 @@ resource "helm_release" "argocd" {
   wait_for_jobs    = true
   cleanup_on_fail  = true
 
-  depends_on = [helm_release.ingress_nginx]
+  depends_on = [null_resource.ingress_webhook_ready]
+}
+
+# ── ArgoCD Ingress ────────────────────────────────────────────────────────
+# Created explicitly rather than via the Helm chart's server.ingress because
+# the chart ignores the hosts override and always defaults to argocd.example.com.
+# Explicit resource = full control, no surprises.
+resource "kubernetes_ingress_v1" "argocd" {
+  metadata {
+    name      = "argocd-server"
+    namespace = kubernetes_namespace.argocd.metadata[0].name
+    labels    = local.common_labels
+    annotations = {
+      # ArgoCD runs in insecure mode (HTTP on 8080). Without backend-protocol=HTTP,
+      # nginx may try to negotiate HTTPS upstream and the connection fails silently.
+      "nginx.ingress.kubernetes.io/backend-protocol" = "HTTP"
+      "nginx.ingress.kubernetes.io/ssl-redirect"     = "false"
+    }
+  }
+
+  spec {
+    ingress_class_name = "nginx"
+    rule {
+      host = "argocd.localhost"
+      http {
+        path {
+          path      = "/"
+          path_type = "Prefix"
+          backend {
+            service {
+              name = "argocd-server"
+              port {
+                number = 80
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [helm_release.argocd, null_resource.ingress_webhook_ready]
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -298,7 +357,7 @@ resource "helm_release" "kube_prometheus_stack" {
   wait_for_jobs    = false
   cleanup_on_fail  = true
 
-  depends_on = [helm_release.ingress_nginx]
+  depends_on = [null_resource.ingress_webhook_ready]
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
