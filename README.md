@@ -2,7 +2,7 @@
 
 > *A Jenkins pipeline that bootstraps a full GitOps platform — Terraform, ingress-nginx, ArgoCD, Prometheus, Grafana — and then removes itself in the final step.*
 
-Built as a portfolio project for SRE/DevOps roles. The joke lands with anyone who's lived through the Jenkins → GitOps migration: you used the old tool to replace itself with the new way of doing things.
+Built as a portfolio project for brushing up on SRE/DevOps skills. The joke lands with anyone who's lived through the Jenkins → GitOps migration: you used the old tool to replace itself with the new way of doing things.
 
 ---
 
