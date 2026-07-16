@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-gitops
+  namespace: apps
+  labels:
+    app: hello-gitops
+    managed-by: argocd
+    last-jenkins-job: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hello-gitops
+  template:
+    metadata:
+      labels:
+        app: hello-gitops
+    spec:
+      containers:
+        - name: hello-gitops
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+      volumes:
+        - name: html
+          configMap:
+            name: hello-gitops-html
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hello-gitops-html
+  namespace: apps
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Hello from GitOps</title>
+      <style>
+        body { font-family: monospace; background: #0d1117; color: #c9d1d9;
+               display: flex; align-items: center; justify-content: center;
+               height: 100vh; margin: 0; flex-direction: column; gap: 1rem; }
+        h1 { color: #58a6ff; font-size: 2rem; }
+        .badge { background: #21262d; border: 1px solid #30363d;
+                 padding: 1rem 2rem; border-radius: 8px; text-align: center; }
+        .green { color: #3fb950; }
+        .dim { color: #8b949e; font-size: 0.85rem; }
+      </style>
+    </head>
+    <body>
+      <h1>🚀 Hello from GitOps</h1>
+      <div class="badge">
+        <p class="green">✅ ArgoCD is in control</p>
+        <p>This page was not deployed by Jenkins.</p>
+        <p class="dim">Jenkins bootstrapped the platform, then removed itself.</p>
+        <p class="dim">This workload is managed purely through git + ArgoCD.</p>
+        <p class="dim">That's the whole point.</p>
+      </div>
+    </body>
+    </html>
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-gitops
+  namespace: apps
+  labels:
+    app: hello-gitops
+spec:
+  selector:
+    app: hello-gitops
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-gitops
+  namespace: apps
+  labels:
+    app: hello-gitops
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hello.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-gitops
+                port:
+                  number: 80

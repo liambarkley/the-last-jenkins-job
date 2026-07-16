@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Last Jenkins Job — Live Dashboard</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #21262d;
+      --border:    #30363d;
+      --text:      #c9d1d9;
+      --muted:     #8b949e;
+      --blue:      #58a6ff;
+      --green:     #3fb950;
+      --yellow:    #d29922;
+      --red:       #f85149;
+      --purple:    #bc8cff;
+      --jenkins:   #d33833;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ───────────────────────────────────────────────── */
+    header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .header-left h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--blue);
+    }
+    .header-left .subtitle {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 0.15rem;
+    }
+
+    .jenkins-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+    .dot.gone { background: var(--muted); animation: none; }
+    .dot.building { background: var(--yellow); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    /* ── Main layout ──────────────────────────────────────────── */
+    main {
+      flex: 1;
+      padding: 2rem;
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    /* ── Cards ────────────────────────────────────────────────── */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 0.75rem 1rem;
+      background: var(--bg3);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .card-body { padding: 1rem; }
+
+    /* ── Pipeline stages ──────────────────────────────────────── */
+    .stages { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .stage {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .stage.pending  { opacity: 0.4; }
+    .stage.running  { border-color: var(--yellow); background: rgba(210,153,34,0.05); }
+    .stage.success  { border-color: var(--green);  background: rgba(63,185,80,0.05); }
+    .stage.failed   { border-color: var(--red);    background: rgba(248,81,73,0.05); }
+    .stage.skipped  { opacity: 0.5; }
+
+    .stage-icon {
+      font-size: 1.3rem;
+      flex-shrink: 0;
+      margin-top: 0.1rem;
+    }
+
+    .stage-info { flex: 1; min-width: 0; }
+    .stage-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .stage-desc {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 0.2rem;
+    }
+
+    .stage-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      text-transform: uppercase;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .badge-pending { background: var(--bg3); color: var(--muted); }
+    .badge-running { background: rgba(210,153,34,0.15); color: var(--yellow); }
+    .badge-success { background: rgba(63,185,80,0.15);  color: var(--green); }
+    .badge-failed  { background: rgba(248,81,73,0.15);  color: var(--red); }
+
+    /* Running spinner */
+    .spin { display: inline-block; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Right column ─────────────────────────────────────────── */
+    .right-col { display: flex; flex-direction: column; gap: 1.5rem; }
+
+    /* ── Narrative box ────────────────────────────────────────── */
+    .narrative {
+      font-size: 0.88rem;
+      line-height: 1.6;
+      color: var(--text);
+    }
+    .narrative .chapter {
+      margin-bottom: 0.5rem;
+      padding: 0.6rem 0.8rem;
+      border-left: 3px solid var(--border);
+      transition: border-color 0.4s;
+    }
+    .narrative .chapter.active { border-left-color: var(--blue); color: var(--text); }
+    .narrative .chapter.done   { border-left-color: var(--green); color: var(--muted); }
+    .narrative .chapter.future { color: var(--muted); }
+
+    /* ── Platform links ───────────────────────────────────────── */
+    .platform-links { display: flex; flex-direction: column; gap: 0.5rem; }
+    .platform-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 0.75rem;
+      background: var(--bg3);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      text-decoration: none;
+      color: var(--text);
+      font-size: 0.85rem;
+      transition: border-color 0.2s;
+    }
+    .platform-link:hover { border-color: var(--blue); }
+    .platform-link .link-name { font-weight: 600; }
+    .platform-link .link-url  { font-size: 0.75rem; color: var(--muted); font-family: monospace; }
+    .platform-link .link-status {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .link-up   { background: rgba(63,185,80,0.15); color: var(--green); }
+    .link-wait { background: rgba(210,153,34,0.15); color: var(--yellow); }
+    .link-na   { background: var(--bg3); color: var(--muted); }
+
+    /* ── Live log ─────────────────────────────────────────────── */
+    .log-box {
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.73rem;
+      line-height: 1.5;
+      color: var(--muted);
+      background: var(--bg);
+      border-radius: 4px;
+      padding: 0.75rem;
+      height: 140px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+    }
+    .log-box .log-line { margin-bottom: 0.1rem; }
+    .log-box .log-ts   { color: var(--blue); margin-right: 0.4rem; }
+    .log-box .log-ok   { color: var(--green); }
+    .log-box .log-warn { color: var(--yellow); }
+    .log-box .log-err  { color: var(--red); }
+
+    /* ── Tombstone ────────────────────────────────────────────── */
+    #tombstone {
+      display: none;
+      text-align: center;
+      padding: 2rem;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    #tombstone.visible { display: block; }
+    #tombstone h2 { color: var(--blue); font-size: 1.2rem; margin-bottom: 0.5rem; }
+    #tombstone p  { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.25rem; }
+    #tombstone .rip { font-size: 3rem; margin-bottom: 0.75rem; }
+
+    /* ── Progress bar ─────────────────────────────────────────── */
+    .progress-bar-wrap {
+      background: var(--bg3);
+      border-radius: 4px;
+      height: 6px;
+      overflow: hidden;
+      margin-bottom: 1rem;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue), var(--green));
+      border-radius: 4px;
+      transition: width 0.8s ease;
+      width: 0%;
+    }
+
+    footer {
+      text-align: center;
+      padding: 1rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>⚙️ The Last Jenkins Job</h1>
+    <div class="subtitle">A pipeline that builds its replacement, then removes itself • Live Dashboard</div>
+  </div>
+  <div class="jenkins-status">
+    <div class="dot" id="jenkins-dot"></div>
+    <span id="jenkins-status-text">Connecting to Jenkins...</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Left: pipeline stages -->
+  <div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span>🔄</span>
+        Pipeline Stages
+        <span style="margin-left:auto;font-weight:400" id="stage-counter">—</span>
+      </div>
+      <div class="card-body">
+        <div class="stages" id="stages-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:1.5rem">
+      <div class="card">
+        <div class="card-header"><span>📜</span> Live Log</div>
+        <div class="card-body" style="padding:0">
+          <div class="log-box" id="log-box"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tombstone (shown after Jenkins self-destructs) -->
+    <div id="tombstone" style="margin-top:1.5rem">
+      <div class="rip">🪦</div>
+      <h2>Jenkins Has Left The Building</h2>
+      <p>The Last Jenkins Job completed successfully.</p>
+      <p>Jenkins removed itself at <span id="tombstone-time">—</span></p>
+      <p style="margin-top:1rem;color:var(--text)">
+        The platform is now managed entirely by ArgoCD.<br>
+        Check the links on the right to explore what was built.
+      </p>
+    </div>
+  </div>
+
+  <!-- Right: narrative + platform links -->
+  <div class="right-col">
+
+    <div class="card">
+      <div class="card-header"><span>📖</span> What's Happening</div>
+      <div class="card-body">
+        <div class="narrative" id="narrative">
+          <div class="chapter future" data-stage="0">
+            <strong>Chapter 1: The Setup</strong><br>
+            Jenkins wakes up, checks the environment, and realises what it's been asked to do.
+          </div>
+          <div class="chapter future" data-stage="1">
+            <strong>Chapter 2: Arming Itself</strong><br>
+            Jenkins installs Terraform, Helm, and the ArgoCD CLI. The tools of its own undoing.
+          </div>
+          <div class="chapter future" data-stage="2">
+            <strong>Chapter 3: The Blueprint</strong><br>
+            Terraform plans a full GitOps platform — ingress, ArgoCD, Prometheus, Grafana.
+          </div>
+          <div class="chapter future" data-stage="3">
+            <strong>Chapter 4: Building It</strong><br>
+            Terraform applies. Kubernetes namespaces are created. Helm charts are deployed.
+            The kingdom is built.
+          </div>
+          <div class="chapter future" data-stage="4">
+            <strong>Chapter 5: Checking The Work</strong><br>
+            Jenkins won't remove itself until the platform is healthy. It has standards.
+          </div>
+          <div class="chapter future" data-stage="5">
+            <strong>Chapter 6: Passing The Torch</strong><br>
+            Platform config is pushed to Gitea. ArgoCD is registered and told where to look.
+            From this point, GitOps is in control.
+          </div>
+          <div class="chapter future" data-stage="6">
+            <strong>Chapter 7: Verification</strong><br>
+            One final check. Everything is syncing. Everything is healthy.
+            Jenkins nods approvingly at its own obsolescence.
+          </div>
+          <div class="chapter future" data-stage="7">
+            <strong>Chapter 8: The Exit</strong><br>
+            Jenkins writes a farewell message, schedules its own container removal,
+            and quietly disappears. Long live GitOps.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><span>🌐</span> Platform Services</div>
+      <div class="card-body">
+        <div class="platform-links">
+          <a href="http://localhost:8080" target="_blank" class="platform-link" id="link-jenkins">
+            <div>
+              <div class="link-name">Jenkins</div>
+              <div class="link-url">localhost:8080</div>
+            </div>
+            <span class="link-status link-wait" id="badge-jenkins">checking</span>
+          </a>
+          <a href="http://localhost:3001" target="_blank" class="platform-link" id="link-gitlab">
+            <div>
+              <div class="link-name">Gitea</div>
+              <div class="link-url">localhost:3001 · gitea / gitops-forever</div>
+            </div>
+            <span class="link-status link-wait" id="badge-gitlab">checking</span>
+          </a>
+          <a href="http://localhost:8090" target="_blank" class="platform-link">
+            <div>
+              <div class="link-name">ArgoCD</div>
+              <div class="link-url">localhost:8090 · admin / see secret</div>
+            </div>
+            <span class="link-status link-wait" id="badge-argocd">pending</span>
+          </a>
+          <a href="http://localhost:3000" target="_blank" class="platform-link">
+            <div>
+              <div class="link-name">Grafana</div>
+              <div class="link-url">localhost:3000 · admin / gitops-era-begins</div>
+            </div>
+            <span class="link-status link-wait" id="badge-grafana">pending</span>
+          </a>
+          <a href="http://localhost:9090" target="_blank" class="platform-link">
+            <div>
+              <div class="link-name">Prometheus</div>
+              <div class="link-url">localhost:9090</div>
+            </div>
+            <span class="link-status link-wait" id="badge-prometheus">pending</span>
+          </a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  Refreshes every 5 seconds · Dashboard outlives Jenkins by design ·
+  <a href="http://localhost:8080" style="color:var(--muted)">Jenkins UI ↗</a>
+</footer>
+
+<script>
+// ────────────────────────────────────────────────────────────────────────────
+// The Last Jenkins Job — Dashboard Logic
+// Polls Jenkins API + state files to show live pipeline progress
+// ────────────────────────────────────────────────────────────────────────────
+
+const JENKINS_URL  = '/api/jenkins';
+const STATE_URL    = '/state/pipeline-status.json';
+const TOMBSTONE_URL = '/state/tombstone.json';
+const PLATFORM_URL  = '/state/platform-state.json';
+const POLL_INTERVAL = 5000;
+
+// Pipeline stage definitions
+const STAGES = [
+  {
+    key: 'stage1',
+    icon: '🌅',
+    name: 'In The Beginning, There Was Jenkins',
+    desc: 'Environment check, Kubernetes connectivity verification',
+  },
+  {
+    key: 'stage2',
+    icon: '🔧',
+    name: 'Installing The Tools Of My Own Destruction',
+    desc: 'Terraform, Helm, ArgoCD CLI — all installed by Jenkins',
+  },
+  {
+    key: 'stage3',
+    icon: '📝',
+    name: 'Writing The Blueprint For My Replacement',
+    desc: 'terraform init + validate + plan',
+  },
+  {
+    key: 'stage4',
+    icon: '🏗️',
+    name: 'Building The Kingdom I Will Never Inhabit',
+    desc: 'terraform apply — namespaces, ingress-nginx, ArgoCD, Prometheus',
+  },
+  {
+    key: 'stage5',
+    icon: '🔍',
+    name: 'Checking The Pulse Of My Successor',
+    desc: 'Health checks — Jenkins won\'t self-destruct until all green',
+  },
+  {
+    key: 'stage6',
+    icon: '🔀',
+    name: 'Pushing GitOps Config To Gitea',
+    desc: 'Seed the platform-config repo that ArgoCD will watch forever',
+  },
+  {
+    key: 'stage7',
+    icon: '🔑',
+    name: 'Handing The Keys To ArgoCD',
+    desc: 'Register repo + deploy app-of-apps. GitOps takes control.',
+  },
+  {
+    key: 'stage8',
+    icon: '✅',
+    name: 'Making Sure The Robots Can Cope Without Me',
+    desc: 'Final platform validation',
+  },
+  {
+    key: 'stage9',
+    icon: '📊',
+    name: 'Final Status Report (For Posterity)',
+    desc: 'Writing the platform manifest and tombstone',
+  },
+  {
+    key: 'stage10',
+    icon: '💀',
+    name: 'Et Tu, Groovy? — The Last Stage',
+    desc: 'Jenkins uses Docker to remove its own container. The end.',
+  },
+];
+
+// State
+let stageStatuses  = {}; // key → 'pending'|'running'|'success'|'failed'
+let jenkinsDead    = false;
+let logLines       = [];
+let currentStageIdx = -1;
+
+// ── DOM Helpers ──────────────────────────────────────────────────────────────
+
+function renderStages() {
+  const container = document.getElementById('stages-list');
+  container.innerHTML = '';
+
+  STAGES.forEach((s, i) => {
+    const status = stageStatuses[s.key] || 'pending';
+    const div = document.createElement('div');
+    div.className = `stage ${status}`;
+    div.id = `stage-${s.key}`;
+
+    let badgeContent = status.toUpperCase();
+    let badgeClass   = `badge-${status}`;
+    if (status === 'running') {
+      badgeContent = '<span class="spin">◌</span> RUNNING';
+    }
+
+    div.innerHTML = `
+      <div class="stage-icon">${s.icon}</div>
+      <div class="stage-info">
+        <div class="stage-name">${s.name}</div>
+        <div class="stage-desc">${s.desc}</div>
+      </div>
+      <div class="stage-badge ${badgeClass}">${badgeContent}</div>
+    `;
+    container.appendChild(div);
+  });
+
+  // Progress
+  const done = Object.values(stageStatuses).filter(v => v === 'success').length;
+  const pct  = Math.round((done / STAGES.length) * 100);
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('stage-counter').textContent = `${done}/${STAGES.length} complete`;
+
+  // Narrative
+  const chapters = document.querySelectorAll('#narrative .chapter');
+  chapters.forEach(ch => {
+    const idx = parseInt(ch.dataset.stage);
+    if (idx < done) {
+      ch.className = 'chapter done';
+    } else if (idx === done) {
+      ch.className = 'chapter active';
+    } else {
+      ch.className = 'chapter future';
+    }
+  });
+}
+
+function addLog(msg, type='') {
+  const ts = new Date().toLocaleTimeString('en-GB', {hour12:false});
+  logLines.push({ts, msg, type});
+  if (logLines.length > 60) logLines.shift();
+
+  const box = document.getElementById('log-box');
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = `<span class="log-ts">[${ts}]</span><span class="log-${type}">${escHtml(msg)}</span>`;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+function setJenkinsStatus(text, state) {
+  document.getElementById('jenkins-status-text').textContent = text;
+  const dot = document.getElementById('jenkins-dot');
+  dot.className = 'dot' + (state === 'gone' ? ' gone' : state === 'building' ? ' building' : '');
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showTombstone(ts) {
+  document.getElementById('tombstone').classList.add('visible');
+  document.getElementById('tombstone-time').textContent = ts || new Date().toLocaleString();
+  // Mark all remaining pending stages as done (pipeline completed)
+  STAGES.forEach(s => {
+    if (!stageStatuses[s.key] || stageStatuses[s.key] === 'pending') {
+      stageStatuses[s.key] = 'success';
+    }
+  });
+  renderStages();
+}
+
+// ── API Polling ──────────────────────────────────────────────────────────────
+
+async function fetchJSON(url) {
+  const r = await fetch(url, {cache:'no-store'});
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+async function checkTombstone() {
+  try {
+    const data = await fetchJSON(TOMBSTONE_URL);
+    if (data && data.status === 'self_terminated') {
+      jenkinsDead = true;
+      setJenkinsStatus('Jenkins has left the building 🪦', 'gone');
+      document.getElementById('badge-jenkins').textContent = 'gone';
+      document.getElementById('badge-jenkins').className = 'link-status link-na';
+      showTombstone(data.terminated_at);
+      addLog('Jenkins self-terminated. The Last Jenkins Job is complete.', 'ok');
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+async function pollPipelineState() {
+  try {
+    const data = await fetchJSON(STATE_URL);
+    if (!data) return;
+
+    // Update stage status based on what Jenkins writes to pipeline-status.json
+    const stageKey = data.stage;
+    const status   = data.status;
+
+    if (stageKey && status) {
+      const logType = status === 'failed' ? 'err' : status === 'running' ? '' : 'ok';
+      if (data.message) addLog(data.message, logType);
+
+      // Only update stage cards for known stages — "unknown" is a pipeline-level
+      // failure notification and must NOT cause all stages to flip to success
+      const knownStage = STAGES.some(s => s.key === stageKey);
+      if (knownStage) {
+        let found = false;
+        STAGES.forEach(s => {
+          if (s.key === stageKey) {
+            found = true;
+            // Map 'started' to 'running' for display
+            stageStatuses[s.key] = status === 'started' ? 'running' : status;
+          } else if (!found) {
+            // Stages before the current one MUST have completed.
+            // Flip anything that isn't an explicit failure to success —
+            // this handles the case where the dashboard missed a 'success'
+            // notification because it was overwritten before the next poll.
+            if (stageStatuses[s.key] !== 'failed') {
+              stageStatuses[s.key] = 'success';
+            }
+          }
+          // Stages after the current one stay pending
+        });
+        renderStages();
+      }
+    }
+  } catch {}
+}
+
+async function checkJenkinsHealth() {
+  try {
+    const r = await fetch(`${JENKINS_URL}/api/json`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3000)
+    });
+    if (r.ok) {
+      setJenkinsStatus('Jenkins is alive and building', 'building');
+      document.getElementById('badge-jenkins').textContent = 'alive';
+      document.getElementById('badge-jenkins').className = 'link-status link-up';
+      return true;
+    }
+  } catch {}
+
+  if (!jenkinsDead) {
+    setJenkinsStatus('Jenkins unreachable...', '');
+    document.getElementById('badge-jenkins').textContent = 'offline';
+    document.getElementById('badge-jenkins').className = 'link-status link-na';
+  }
+  return false;
+}
+
+async function pollPlatformLinks() {
+  // Simple reachability pings via img tags (avoids CORS)
+  const links = [
+    { id: 'badge-gitlab',    url: 'http://localhost:3001/-/health' },
+    { id: 'badge-argocd',   url: 'http://localhost:8090/healthz' },
+    { id: 'badge-grafana',  url: 'http://localhost:3000/api/health' },
+    { id: 'badge-prometheus', url: 'http://localhost:9090/-/healthy' },
+  ];
+
+  links.forEach(({id, url}) => {
+    const el = document.getElementById(id);
+    if (!el || el.textContent === 'gone') return;
+
+    const img = new Image();
+    const timer = setTimeout(() => {
+      el.textContent = 'timeout';
+      el.className = 'link-status link-na';
+    }, 3000);
+
+    img.onload = img.onerror = (e) => {
+      clearTimeout(timer);
+      // onerror could still mean reachable (CORS), treat as up
+      el.textContent = 'up';
+      el.className = 'link-status link-up';
+    };
+    img.src = url + '?_=' + Date.now();
+  });
+}
+
+// ── Main loop ────────────────────────────────────────────────────────────────
+
+async function tick() {
+  // Check tombstone first (Jenkins may be gone)
+  if (!jenkinsDead) {
+    const dead = await checkTombstone();
+    if (!dead) {
+      await checkJenkinsHealth();
+      await pollPipelineState();
+    }
+  }
+  await pollPlatformLinks();
+}
+
+// Initial render with all stages pending
+STAGES.forEach(s => { stageStatuses[s.key] = 'pending'; });
+renderStages();
+addLog('Dashboard loaded. Watching for Jenkins...', '');
+
+// Start polling
+tick();
+setInterval(tick, POLL_INTERVAL);
+
+// Simulate early stage activity if Jenkins hasn't started yet (UI demo mode)
+setTimeout(() => {
+  if (Object.values(stageStatuses).every(v => v === 'pending')) {
+    addLog('Tip: Start the Jenkins job at http://localhost:8080', 'warn');
+    addLog('Create a Pipeline job → point it at this repo → Build Now', 'warn');
+  }
+}, 10000);
+</script>
+
+</body>
+</html>

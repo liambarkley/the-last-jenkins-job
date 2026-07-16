@@ -1,0 +1,34 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  Sample App — Managed by ArgoCD post-Jenkins                           ║
+# ║                                                                          ║
+# ║  A demo application to prove ArgoCD is actually doing its job.          ║
+# ║  Deploys a simple nginx "Hello from GitOps" page.                       ║
+# ║  No Jenkins involved. That's the whole point.                           ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hello-gitops
+  namespace: argocd
+  labels:
+    managed-by: argocd
+    last-jenkins-job: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: http://host.docker.internal:3001/gitea/platform-config.git
+    targetRevision: HEAD
+    path: workloads/hello-gitops
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: apps
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

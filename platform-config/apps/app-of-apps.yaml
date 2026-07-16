@@ -1,0 +1,54 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  App-of-Apps — The root ArgoCD Application                             ║
+# ║                                                                          ║
+# ║  This single manifest, applied by Jenkins in its final act,             ║
+# ║  hands control of the entire platform to ArgoCD.                        ║
+# ║                                                                          ║
+# ║  ArgoCD will watch the platform-config Gitea repo and sync              ║
+# ║  everything defined in platform-config/apps/ automatically.             ║
+# ║  Jenkins never needs to touch it again.                                 ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-root
+  namespace: argocd
+  labels:
+    bootstrapped-by: jenkins
+    last-jenkins-job: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    last-jenkins-job/note: |
+      This application was created by The Last Jenkins Job.
+      Jenkins is gone. ArgoCD is in charge now.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # The Gitea repo Jenkins seeded in Stage 6.
+    # ArgoCD runs inside Kubernetes — it can't reach 'localhost' (that's the pod's own loopback).
+    # host.docker.internal routes from the K8s node back to the Docker Desktop host where Gitea runs.
+    repoURL: http://host.docker.internal:3001/gitea/platform-config.git
+    targetRevision: HEAD
+    path: apps
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      prune: true       # Remove resources that disappear from git
+      selfHeal: true    # Re-apply if someone edits things manually
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,56 @@
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  Jenkins Configuration as Code — The Last Jenkins Job                  ║
+# ║                                                                          ║
+# ║  Jenkins reads this on startup and configures itself automatically.     ║
+# ║  The pipeline job is pre-created. The only manual step is "Build Now".  ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+jenkins:
+  systemMessage: |
+    ╔══════════════════════════════════════════════════════════╗
+    ║  THE LAST JENKINS JOB                                    ║
+    ║                                                          ║
+    ║  Everything is configured. Click Build Now to begin.    ║
+    ║  Watch the show at http://localhost:8888                 ║
+    ╚══════════════════════════════════════════════════════════╝
+  numExecutors: 2
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: gitea-creds
+              username: gitea
+              password: gitops-forever
+              description: "Gitea — self-hosted Git server"
+
+# Auto-create the pipeline job via Job DSL
+# When Jenkins starts, this job already exists. Just hit Build Now.
+jobs:
+  - script: |
+      pipelineJob('the-last-jenkins-job') {
+        description('''
+          A Jenkins pipeline that bootstraps a full GitOps platform
+          (ingress-nginx, ArgoCD, Prometheus, Grafana) via Terraform,
+          then removes itself in the final step.
+
+          "Using the master\'s tools to dismantle the master\'s house."
+        ''')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('http://gitea:3001/gitea/the-last-jenkins-job.git')
+                  credentials('gitea-creds')
+                }
+                branches('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }

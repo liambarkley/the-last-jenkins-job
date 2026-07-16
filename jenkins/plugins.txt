@@ -1,0 +1,38 @@
+# Jenkins plugins for The Last Jenkins Job
+# These are the last plugins Jenkins will ever need
+
+# Pipeline essentials
+workflow-aggregator
+pipeline-stage-view
+pipeline-graph-analysis
+blueocean
+
+# Git / GitLab integration
+git
+gitlab-plugin
+gitlab-branch-source
+
+# Credentials & secrets
+credentials
+credentials-binding
+plain-credentials
+
+# UI & UX
+ansicolor
+timestamper
+build-monitor-plugin
+dashboard-view
+
+# Notifications (so Jenkins can say goodbye)
+junit
+htmlpublisher
+
+# Kubernetes (to talk to the cluster it will build)
+kubernetes
+kubernetes-cli
+
+# Utilities
+ws-cleanup
+rebuild
+job-dsl
+configuration-as-code
