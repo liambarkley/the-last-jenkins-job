@@ -77,6 +77,7 @@ cat << 'EOF'
     ArgoCD:     http://argocd.localhost        (admin / see argocd-initial-admin-secret)
     Grafana:    http://grafana.localhost       (admin / gitops-era-begins)
     Prometheus: http://prometheus.localhost
+    Hello:      http://hello.localhost         (deployed by ArgoCD, not me)
     Gitea:      http://localhost:3001          (gitea / gitops-forever)
     Dashboard:  http://localhost:8888          (still running, outlives me)
 

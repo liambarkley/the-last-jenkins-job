@@ -7,12 +7,12 @@
 
 jenkins:
   systemMessage: |
-    ╔══════════════════════════════════════════════════════════╗
-    ║  THE LAST JENKINS JOB                                    ║
-    ║                                                          ║
-    ║  Everything is configured. Click Build Now to begin.    ║
-    ║  Watch the show at http://localhost:8888                 ║
-    ╚══════════════════════════════════════════════════════════╝
+    ============================================================
+      THE LAST JENKINS JOB
+
+      Everything is configured. Click Build Now to begin.
+      Watch the show at http://localhost:8888
+    ============================================================
   numExecutors: 2
 
 credentials:

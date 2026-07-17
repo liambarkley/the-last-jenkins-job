@@ -10,6 +10,7 @@ ENTRIES=(
     "127.0.0.1 argocd.localhost"
     "127.0.0.1 grafana.localhost"
     "127.0.0.1 prometheus.localhost"
+    "127.0.0.1 hello.localhost"
 )
 
 if grep -q "$MARKER" "$HOSTS_FILE" 2>/dev/null; then

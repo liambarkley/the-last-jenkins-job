@@ -112,25 +112,9 @@ services:
     container_name: jenkins-controller
     hostname: jenkins-controller
     restart: unless-stopped
-    user: root   # Required so the farewell script can reach the Docker socket.
-                 # On Docker Desktop, the mounted socket file may not be world-accessible
-                 # (srw-rw---- rather than srw-rw-rw-), so non-root users can't connect
-                 # even via curl --unix-socket. Root bypasses this entirely.
-                 # For a demo pipeline whose whole point is to delete itself: acceptable.
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        # Git 2.35+ refuses to operate in directories owned by a different uid.
-        # Running as root but workspace dirs are owned by uid 1000 (jenkins) triggers
-        # the "dubious ownership" / "not in a git directory" error. Tell git to
-        # trust everything — this is a single-purpose demo container, not production.
-        git config --global --add safe.directory '*'
-        # Make the Docker socket world-accessible so curl --unix-socket works
-        # regardless of the socket's group GID on this host.
-        chmod 666 /var/run/docker.sock 2>/dev/null || true
-        # Hand off to the normal Jenkins entrypoint
-        exec /usr/bin/tini -- /usr/local/bin/jenkins.sh
+    # No 'user: root' here. The image ENTRYPOINT (jenkins/entrypoint.sh) starts as root
+    # to detect the Docker socket GID and add jenkins to the right group, then drops to
+    # the jenkins user via gosu. Jenkins runs as uid 1000, not root.
     environment:
       - DOCKER_HOST=unix:///var/run/docker.sock
       - GITEA_URL=http://gitea:3001

@@ -90,6 +90,7 @@ Once Stage 10 completes, Jenkins removes itself. The platform keeps running:
 | ArgoCD     | http://argocd.localhost       | admin / (see `argocd-initial-admin-secret`) |
 | Grafana    | http://grafana.localhost      | admin / `gitops-era-begins`                 |
 | Prometheus | http://prometheus.localhost   | —                                           |
+| Hello      | http://hello.localhost        | — (deployed by ArgoCD, not Jenkins)         |
 | Gitea      | http://localhost:3001         | gitea / `gitops-forever`                    |
 | Dashboard  | http://localhost:8888         | Still running, shows tombstone              |
 
@@ -156,7 +157,9 @@ nohup bash -c "
 " > /dev/null 2>&1 &
 ```
 
-The Docker CLI is bypassed entirely — it has a group membership check that doesn't reliably work across Docker Desktop versions. `curl --unix-socket` talks to the Docker API directly, which only requires file-level access to the socket. The removal is scheduled in a detached background process so the Jenkins pipeline has time to report Stage 10 as complete before the container is killed.
+The removal is scheduled in a detached background process so the Jenkins pipeline has time to report Stage 10 as complete before the container is killed.
+
+**How socket access works:** The Jenkins image uses a custom `entrypoint.sh` that runs briefly as root at container startup to detect the actual GID of the mounted Docker socket, adds the `jenkins` user to a group with that GID, then drops to `jenkins` (uid 1000) via `gosu`. Jenkins itself never runs as root — the entrypoint handles the socket wiring and hands off. `curl --unix-socket` is used instead of the Docker CLI as a more direct path to the Docker Engine REST API.
 
 The dashboard continues running (it's a separate nginx container) and shows the tombstone.
 

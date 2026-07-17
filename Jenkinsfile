@@ -111,10 +111,26 @@ pipeline {
                     kubectl delete namespace ingress-nginx argocd monitoring apps \\
                         --ignore-not-found --wait=false 2>/dev/null || true
 
-                    # Now wait for each namespace to actually disappear.
-                    # kubectl wait exits immediately if the resource is already gone.
+                    # Poll until each namespace is fully gone before continuing.
+                    # kubectl wait with || true silently passes even on timeout — which means
+                    # Terraform can race into a still-terminating namespace and fail.
+                    # kube-prometheus-stack in particular can take 2+ minutes to terminate.
                     for ns in ingress-nginx argocd monitoring apps; do
-                        kubectl wait --for=delete namespace/"$ns" --timeout=60s 2>/dev/null || true
+                        elapsed=0
+                        printf "  Waiting for namespace/%s to terminate..." "$ns"
+                        while kubectl get namespace "$ns" > /dev/null 2>&1; do
+                            sleep 5
+                            elapsed=$((elapsed + 5))
+                            printf " %ds" "$elapsed"
+                            if [ "$elapsed" -ge 180 ]; then
+                                echo " (timeout — forcing finalizer removal)"
+                                kubectl patch namespace "$ns" \\
+                                    -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+                                sleep 5
+                                break
+                            fi
+                        done
+                        echo " done."
                     done
 
                     # The last-jenkins-job-manifest ConfigMap lives in 'default' which can't
@@ -200,7 +216,10 @@ pipeline {
             post {
                 failure { script { notifyDashboard('failed', 'stage3', 'Terraform plan failed') } }
                 always {
-                    archiveArtifacts artifacts: '/var/jenkins_home/tfplan', allowEmptyArchive: true
+                    // archiveArtifacts needs a path relative to the workspace.
+                    // Copy tfplan from jenkins_home into the workspace first.
+                    sh 'cp /var/jenkins_home/tfplan "${WORKSPACE}/tfplan" 2>/dev/null || true'
+                    archiveArtifacts artifacts: 'tfplan', allowEmptyArchive: true
                 }
             }
         }

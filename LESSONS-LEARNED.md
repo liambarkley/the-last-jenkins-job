@@ -204,21 +204,59 @@ There are two independent permission checks when connecting to a Unix socket:
 
 Both were blocking, but they look identical from the outside — "can't reach the socket" — which made the second one invisible until the first was fixed.
 
-The solution was to run the Jenkins container as root, which bypasses file permission checks on the socket. That introduced a new issue immediately: git 2.35+ refuses to operate in directories owned by a different uid (the "dubious ownership" check), and the workspace directories were owned by the previous jenkins user (uid 1000). Running as root caused `fatal: not in a git directory` before a single stage had run.
+The initial fix was to run the container as root — blunt, but it unblocked development. That immediately introduced a third issue: git 2.35+ refuses to operate in directories owned by a different uid (the "dubious ownership" check). Workspace directories owned by uid 1000 (jenkins) are silently ignored when accessed as root, causing `fatal: not in a git directory` before a single stage ran.
 
-Both are fixed at container startup via a two-line entrypoint:
+Stacking `git config --global --add safe.directory '*'` on top of `user: root` solved it temporarily, but the result was Jenkins running as root with a wildcard git trust override — two security anti-patterns in one entrypoint.
 
-```yaml
-entrypoint:
-  - /bin/sh
-  - -c
-  - |
-    git config --global --add safe.directory '*'
-    chmod 666 /var/run/docker.sock 2>/dev/null || true
-    exec /usr/bin/tini -- /usr/local/bin/jenkins.sh
+The proper fix is a startup shim that does the GID work before dropping privileges:
+
+```bash
+#!/bin/bash
+# entrypoint.sh — runs as root briefly, drops to jenkins via gosu
+
+if [ -S /var/run/docker.sock ]; then
+    SOCKET_GID=$(stat -c '%g' /var/run/docker.sock)
+    if ! getent group "$SOCKET_GID" > /dev/null 2>&1; then
+        groupmod -g "$SOCKET_GID" docker 2>/dev/null \
+            || groupadd -g "$SOCKET_GID" docker-host
+    fi
+    SOCKET_GROUP=$(getent group "$SOCKET_GID" | cut -d: -f1)
+    usermod -aG "$SOCKET_GROUP" jenkins
+fi
+
+exec gosu jenkins /usr/bin/tini -- /usr/local/bin/jenkins.sh
 ```
 
-Two security controls, both invisible until you change execution context in a way that trips them. The fix for one exposed the other.
+The Dockerfile sets `USER root` and `ENTRYPOINT` to this script. The container starts as root long enough to detect the actual socket GID, update group membership, then drops to `jenkins` (uid 1000) for everything that follows. Jenkins itself never runs as root. The git safe.directory override isn't needed because the process running git owns the workspace directories.
+
+Two security controls, both invisible until you change execution context. Understanding the layering — socket file permissions vs. group membership, and process uid vs. directory ownership — is what separates a real fix from stacking workarounds.
+
+---
+
+## 13. `|| true` on a wait command silently turns a timeout into a success
+
+After the namespace deletion fix from lesson 1, the cleanup used `kubectl wait --for=delete namespace/X --timeout=60s || true`. This worked most of the time, but on a second consecutive run — where kube-prometheus-stack was still in the middle of terminating — both `ingress-nginx` and `monitoring` exceeded the 60-second timeout. `|| true` swallowed the error and the script moved on. Terraform immediately attempted to create those namespaces and hit:
+
+```
+Error: object is being deleted: namespaces "ingress-nginx" already exists
+Error: object is being deleted: namespaces "monitoring" already exists
+```
+
+The race condition that lesson 1 was supposed to fix had just been given a shorter time window and a silent exit.
+
+kube-prometheus-stack installs a significant number of CRDs, operators, and pods. When those are mid-termination after a previous run, the namespace can take 2+ minutes to fully clear — well beyond any 60-second assumption.
+
+The fix is a polling loop that confirms the namespace is actually gone rather than trusting a timed command to be sufficient:
+
+```bash
+for ns in ingress-nginx argocd monitoring apps; do
+    while kubectl get namespace "$ns" > /dev/null 2>&1; do
+        sleep 5
+    done
+done
+```
+
+`|| true` is useful for "I expect this might not exist." It's the wrong pattern for "I need this to be gone before I continue." The distinction matters.
 
 ---
 
