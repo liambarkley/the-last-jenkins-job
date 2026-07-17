@@ -2,7 +2,7 @@
 
 > *A Jenkins pipeline that bootstraps a full GitOps platform — Terraform, ingress-nginx, ArgoCD, Prometheus, Grafana — and then removes itself in the final step.*
 
-Built as a portfolio project for SRE/DevOps roles. The joke lands with anyone who's lived through the Jenkins → GitOps migration: you used the old tool to replace itself with the new way of doing things.
+The joke lands with anyone who's lived through the Jenkins → GitOps migration: you used the old tool to replace itself with the new way of doing things. Click a button, watch it work, and when it's done Jenkins is gone.
 
 ---
 
@@ -33,7 +33,7 @@ After Stage 10, Jenkins is gone. The platform it built keeps running. ArgoCD wat
   3. Click **Apply & Restart** and wait ~2 minutes for the cluster to come up
 - **Docker Compose** (included with Docker Desktop)
 - **~6 GB RAM** available
-- Ports free: `8080`, `8888`, `3001`, `2222`, `3000`, `8090`, `9090`
+- Ports free: `8080`, `8888`, `3001`, `2222`, `80`
 
 Verify Kubernetes is running before starting:
 ```bash
@@ -85,13 +85,15 @@ Click **Build Now** in Jenkins and watch the dashboard at `http://localhost:8888
 
 Once Stage 10 completes, Jenkins removes itself. The platform keeps running:
 
-| Service    | URL                       | Credentials                                 |
-|------------|---------------------------|---------------------------------------------|
-| ArgoCD     | http://localhost:8090     | admin / (see `argocd-initial-admin-secret`) |
-| Grafana    | http://localhost:3000     | admin / `gitops-era-begins`                 |
-| Prometheus | http://localhost:9090     | —                                           |
-| Gitea      | http://localhost:3001     | gitea / `gitops-forever`                    |
-| Dashboard  | http://localhost:8888     | Still running, shows tombstone              |
+| Service    | URL                           | Credentials                                 |
+|------------|-------------------------------|---------------------------------------------|
+| ArgoCD     | http://argocd.localhost       | admin / (see `argocd-initial-admin-secret`) |
+| Grafana    | http://grafana.localhost      | admin / `gitops-era-begins`                 |
+| Prometheus | http://prometheus.localhost   | —                                           |
+| Gitea      | http://localhost:3001         | gitea / `gitops-forever`                    |
+| Dashboard  | http://localhost:8888         | Still running, shows tombstone              |
+
+The `.localhost` domains route through ingress-nginx on port 80. They require a one-time hosts file entry — run `sudo ./scripts/setup-hosts.sh` (or `make hosts`) before your first build.
 
 Get the ArgoCD password:
 ```bash
@@ -144,13 +146,17 @@ the-last-jenkins-job/
 
 ## How The Self-Destruct Works
 
-Jenkins is granted access to the host Docker socket (`/var/run/docker.sock`) via the volume mount in `docker-compose.yml`. In Stage 10, `farewell.sh` runs:
+Jenkins is granted access to the host Docker socket (`/var/run/docker.sock`) via the volume mount in `docker-compose.yml`. In Stage 10, `farewell.sh` calls the Docker Engine REST API directly via the socket:
 
 ```bash
-nohup bash -c "sleep 3 && docker rm -f jenkins-controller" > /dev/null 2>&1 &
+nohup bash -c "
+    sleep 3
+    curl -sf --unix-socket /var/run/docker.sock \
+        -X DELETE 'http://localhost/containers/jenkins-controller?force=true'
+" > /dev/null 2>&1 &
 ```
 
-This schedules container removal in a background process, giving the Jenkins pipeline enough time to report the final stage as complete before the container is killed. The pipeline shows ✅ on Stage 10, then Jenkins vanishes.
+The Docker CLI is bypassed entirely — it has a group membership check that doesn't reliably work across Docker Desktop versions. `curl --unix-socket` talks to the Docker API directly, which only requires file-level access to the socket. The removal is scheduled in a detached background process so the Jenkins pipeline has time to report Stage 10 as complete before the container is killed.
 
 The dashboard continues running (it's a separate nginx container) and shows the tombstone.
 
@@ -190,23 +196,19 @@ kubectl config get-contexts
 Both are on the `last-jenkins-net` Docker network. Use the hostname `gitea` from within Jenkins (not `localhost`).
 
 **Self-destruct didn't work**
-Check if the Docker socket is mounted:
+Check the farewell log written inside the container:
 ```bash
-docker exec jenkins-controller docker ps
+docker exec jenkins-controller cat /var/jenkins_home/farewell.log
 ```
-If that fails, the socket isn't available. Verify the volume in `docker-compose.yml` and restart.
+The self-destruct uses `curl --unix-socket` to call the Docker Engine API directly — it doesn't use the Docker CLI. If the socket wasn't reachable, the log will say so.
 
-To manually remove Jenkins after the fact:
+To remove Jenkins manually:
 ```bash
 docker compose stop jenkins
 docker compose rm -f jenkins
 ```
 
 ---
-
-## CV Description
-
-> Built *The Last Jenkins Job* — a fully working Jenkins pipeline that bootstraps a local Kubernetes platform (ingress-nginx, ArgoCD, Prometheus, Grafana) using Terraform and Helm, then removes itself in the final step using the Docker socket. A tongue-in-cheek commentary on the GitOps transition, and a reference implementation covering CI/CD, IaC, GitOps, networking, and observability in a single self-contained demo.
 
 ---
 

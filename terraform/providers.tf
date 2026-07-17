@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  THE LAST JENKINS JOB — Terraform Providers                            ║
+# ║  THE LAST JENKINS JOB — Terraform Providers                              ║
 # ║                                                                          ║
 # ║  Target: Docker Desktop Kubernetes (local)                               ║
 # ║  Provisions: ingress-nginx, ArgoCD, kube-prometheus-stack via Helm       ║
